@@ -1,0 +1,15 @@
+# 1. Tạo file .gitignore
+cat << 'EOF' > .gitignore
+.env
+*.env
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+postgres_data/
+pgdata/
+redis_data/
+.vscode/
+.idea/
+EOF
