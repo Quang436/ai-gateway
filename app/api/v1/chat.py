@@ -1,8 +1,8 @@
 import time
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import StreamingResponse
 import json
@@ -30,14 +30,18 @@ class ChatRequest(BaseModel):
     provider: Optional[str] = Field("gemini", example="gemini")
     enable_fallback: Optional[bool] = Field(True, description="Tự động chuyển sang provider khác khi lỗi")
     enable_cache: Optional[bool] = Field(True, description="Bật/tắt đọc/ghi bộ nhớ đệm Redis")
-    conversation_id: Optional[str] = Field(None, description="ID cuộc hội thoại để duy trì ngữ cảnh")
-    conservation_id: Optional[str] = Field(None, description="Alias cho conversation_id phòng khi gõ nhầm chính tả")
+    conversation_id: Optional[str] = Field(None, description="ID cuộc hội thoại (UUID) để tiếp tục ngữ cảnh từ lượt chat trước")
     temperature: Optional[float] = 0.7
     response_format: Optional[str] = Field("text", description="'text' hoặc 'json_object'")
 
-    @property
-    def resolved_conversation_id(self) -> Optional[str]:
-        return self.conversation_id or self.conservation_id
+    @model_validator(mode="before")
+    @classmethod
+    def handle_typo_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Tự động hỗ trợ nếu client gửi nhầm 'conservation_id' thay vì 'conversation_id'
+            if "conservation_id" in data and not data.get("conversation_id"):
+                data["conversation_id"] = data.get("conservation_id")
+        return data
 
 @router.post("/chat")
 async def chat(
@@ -55,11 +59,11 @@ async def chat(
     conv = await ConversationService.get_or_create_conversation(
         db=db,
         client_id=client.id,
-        conversation_id=request.resolved_conversation_id
+        conversation_id=request.conversation_id
     )
     
-    # Lấy lịch sử cũ đã lưu trong DB
-    past_messages = await ConversationService.get_history(db=db, conversation_id=conv.id, limit=6)
+    # Lấy lịch sử cũ đã lưu trong DB (lấy tối đa 10 tin nhắn gần nhất)
+    past_messages = await ConversationService.get_history(db=db, conversation_id=conv.id, limit=10)
     
     # Ghép lịch sử cũ với tin nhắn mới gửi lên
     new_messages = [m.model_dump() for m in request.messages]
@@ -88,6 +92,19 @@ async def chat(
             )
             db.add(log_entry)
             await db.commit()
+
+            # Lưu tin nhắn vào cuộc hội thoại để các lượt sau tiếp tục có ngữ cảnh
+            user_prompt_text = "\n".join([m["content"] for m in new_messages if m["role"] == "user"])
+            cached_content = cached_result.get("message", {}).get("content", "")
+            if user_prompt_text and cached_content:
+                await ConversationService.save_messages(
+                    db=db,
+                    conversation_id=conv.id,
+                    user_content=user_prompt_text,
+                    assistant_content=cached_content,
+                    input_tokens=0,
+                    output_tokens=0
+                )
 
             cached_result["cached"] = True
             cached_result["latency_ms"] = latency_ms
@@ -227,9 +244,9 @@ async def chat_stream_endpoint(
     conv = await ConversationService.get_or_create_conversation(
         db=db,
         client_id=client.id,
-        conversation_id=request.resolved_conversation_id
+        conversation_id=request.conversation_id
     )
-    past_messages = await ConversationService.get_history(db=db, conversation_id=conv.id, limit=6)
+    past_messages = await ConversationService.get_history(db=db, conversation_id=conv.id, limit=10)
     new_messages = [m.model_dump() for m in request.messages]
     full_messages = past_messages + new_messages
 
@@ -273,6 +290,18 @@ async def chat_stream_endpoint(
                     )
                     db.add(log_entry)
                     await db.commit()
+
+                    # Lưu tin nhắn vào DB để duy trì ngữ cảnh
+                    user_prompt_text = "\n".join([m["content"] for m in new_messages if m["role"] == "user"])
+                    if user_prompt_text and cached_content:
+                        await ConversationService.save_messages(
+                            db=db,
+                            conversation_id=conv.id,
+                            user_content=user_prompt_text,
+                            assistant_content=cached_content,
+                            input_tokens=0,
+                            output_tokens=0
+                        )
 
                     # Trả về nội dung cache theo chuẩn SSE
                     yield f"data: {json.dumps({'content': cached_content, 'done': False})}\n\n"

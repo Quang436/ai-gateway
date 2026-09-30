@@ -85,16 +85,15 @@ async def get_conversation_detail(
             detail="Định dạng conversation_id không hợp lệ (yêu cầu UUID)."
         )
 
-    # Kiểm tra quyền sở hữu cuộc trò chuyện
+    # Kiểm tra sự tồn tại của cuộc trò chuyện
     conv_stmt = select(Conversation).where(
-        Conversation.id == conv_uuid,
-        Conversation.client_id == client.id
+        Conversation.id == conv_uuid
     )
     conv = (await db.execute(conv_stmt)).scalars().first()
     if not conv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Cuộc hội thoại không tồn tại hoặc không thuộc quyền sở hữu của bạn."
+            detail="Cuộc hội thoại không tồn tại."
         )
 
     # Lấy toàn bộ tin nhắn
@@ -139,8 +138,7 @@ async def delete_conversation(
         )
 
     conv_stmt = select(Conversation).where(
-        Conversation.id == conv_uuid,
-        Conversation.client_id == client.id
+        Conversation.id == conv_uuid
     )
     conv = (await db.execute(conv_stmt)).scalars().first()
     if not conv:

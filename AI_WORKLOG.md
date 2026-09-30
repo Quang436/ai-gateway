@@ -142,15 +142,33 @@ Một trong những đóng góp quan trọng nhất của đội ngũ kỹ sư l
 
 ---
 
-### 🔍 Bug Postmortem #6: Phòng ngừa lỗi chính tả người dùng (`conservation_id`)
-- **Hiện tượng**: Người dùng gửi payload kiểm thử gõ nhầm `"conservation_id": "..."` (thừa chữ s). Pydantic mặc định bỏ qua trường này, khiến Gateway luôn tạo ra một cuộc trò chuyện mới toanh, làm mất toàn bộ ngữ cảnh trước đó.
-- **Giải pháp kiểm chứng**: Bổ sung trường alias `conservation_id: Optional[str] = None` và property thông minh:
+### 🔍 Bug Postmortem #6: Tinh chỉnh Alias chính tả (`conservation_id`) ẩn khỏi Swagger UI
+- **Hiện tượng**: Ban đầu, để phòng ngừa người dùng gõ nhầm chính tả `"conservation_id"`, code khai báo thêm field `conservation_id: Optional[str] = None`. Điều này vô tình khiến Swagger UI hiển thị cả 2 trường song song (`conversation_id` và `conservation_id`), gây bối rối và thừa thãi trong tài liệu API.
+- **Giải pháp tối ưu**: Loại bỏ trường thừa khỏi Pydantic schema, sử dụng `@model_validator(mode="before")`:
   ```python
-  @property
-  def resolved_conversation_id(self) -> Optional[str]:
-      return self.conversation_id or self.conservation_id
+  @model_validator(mode="before")
+  @classmethod
+  def handle_typo_alias(cls, data: Any) -> Any:
+      if isinstance(data, dict):
+          if "conservation_id" in data and not data.get("conversation_id"):
+              data["conversation_id"] = data.get("conservation_id")
+      return data
   ```
-  Giúp hệ thống tự động tha thứ lỗi chính tả và bảo toàn ngữ cảnh hội thoại cho người dùng.
+  Swagger UI `/docs` hiển thị duy nhất trường chuẩn `conversation_id`, đồng thời vẫn âm thầm tự động tha thứ và xử lý mọi request gửi nhầm chính tả.
+
+---
+
+### 🚨 Bug Postmortem #7: Đứt gãy ngữ cảnh đa lượt chat khi Cache Hit và Đổi API Key
+- **Hiện tượng**: Người dùng khai báo tên ở lượt 1 ("Tôi tên là Quang"), nhưng sang lượt 2 hỏi lại ("Tôi tên gì?") kèm theo `conversation_id`, AI trả lời không biết và trong cơ sở dữ liệu bị phát sinh thêm một cuộc hội thoại thừa.
+- **Phát hiện & Chẩn đoán**:
+  1. **Lệch Client ID**: Trong quá trình test, khi người dùng tạo API Key mới via `POST /auth`, `client.id` thay đổi. `ConversationService.get_or_create_conversation` truy vấn `Conversation.client_id == client.id`, dẫn đến không tìm thấy cuộc trò chuyện cũ tạo bởi Key trước đó, hệ thống tự động sinh thêm 1 conversation mới tinh (dẫn đến bị dư conversation và rỗng tin nhắn).
+  2. **Thất thoát lưu trữ khi Cache Hit**: Khi bật `enable_cache: true`, nếu truy vấn kích hoạt Cache Hit, router trả về ngay kết quả đệm mà bỏ qua `ConversationService.save_messages`, khiến ngữ cảnh cuộc trò chuyện không được cập nhật vào PostgreSQL.
+  3. **Độc bộ nhớ đệm (Poisoned Cache)**: Câu trả lời "Tôi không biết bạn tên gì" ở lượt 2 từng bị lưu vào Redis Cache với TTL 3600s, khiến các lần hỏi lại tiếp theo luôn trả về ngay câu trả lời không biết.
+- **Khắc phục triệt để**:
+  - Cập nhật `ConversationService.get_or_create_conversation`: Tìm theo UUID cuộc trò chuyện, tự động gán client mới nếu chuyển đổi API key trong lúc test. Bỏ qua giá trị placeholder `"string"` từ Swagger UI.
+  - Bổ sung `ConversationService.save_messages` vào cả 2 luồng Cache Hit của `/ai/chat` và `/ai/stream`.
+  - Thực hiện `redis-cli flushall` làm sạch hoàn toàn cache cũ.
+  - Kiểm thử tự động chuỗi 2 lượt chat và kiểm thử chuyển đổi chéo giữa Key A và Key B: AI ghi nhớ chính xác 100% tên người dùng, chia sẻ chung một `conversation_id` duy nhất.
 
 ---
 

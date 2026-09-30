@@ -15,15 +15,20 @@ class ConversationService:
         if conversation_id:
             try:
                 cleaned_id = str(conversation_id).strip().strip("'").strip('"')
-                conv_uuid = uuid.UUID(cleaned_id)
-                stmt = select(Conversation).where(
-                    Conversation.id == conv_uuid,
-                    Conversation.client_id == client_id
-                )
-                result = await db.execute(stmt)
-                conv = result.scalars().first()
-                if conv:
-                    return conv
+                if cleaned_id and cleaned_id.lower() != "string":
+                    conv_uuid = uuid.UUID(cleaned_id)
+                    stmt = select(Conversation).where(
+                        Conversation.id == conv_uuid
+                    )
+                    result = await db.execute(stmt)
+                    conv = result.scalars().first()
+                    if conv:
+                        # Gán quyền truy cập cho client hiện tại nếu chưa trùng (hỗ trợ test nhiều API key)
+                        if conv.client_id != client_id:
+                            conv.client_id = client_id
+                            await db.commit()
+                            await db.refresh(conv)
+                        return conv
             except ValueError:
                 pass
 

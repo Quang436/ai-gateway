@@ -299,6 +299,23 @@
               "path": ["conversations", "{{conversationId}}"]
             }
           }
+        },
+        {
+          "name": "DELETE /conversations/:id (Xóa cuộc hội thoại)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/conversations/{{conversationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["conversations", "{{conversationId}}"]
+            }
+          }
         }
       ]
     },
