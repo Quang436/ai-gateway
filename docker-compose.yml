@@ -1,0 +1,56 @@
+
+services:
+  app:
+    build: .
+    container_name: ai_gateway_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://gateway_admin:gateway_secret_123@postgres:5432/ai_gateway_db
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DEFAULT_GATEWAY_API_KEY=${DEFAULT_GATEWAY_API_KEY:-gw-test-secret-key-12345}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai_gateway_pg
+    environment:
+      POSTGRES_USER: gateway_admin
+      POSTGRES_PASSWORD: gateway_secret_123
+      POSTGRES_DB: ai_gateway_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway_admin -d ai_gateway_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai_gateway_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

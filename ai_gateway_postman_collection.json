@@ -1,0 +1,339 @@
+{
+  "info": {
+    "name": "AI Gateway API Collection",
+    "_postman_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "description": "Bộ sưu tập Postman đầy đủ các API của Cổng AI Gateway (Bao gồm Auth, Rate Limiting, Caching, Routing, Fallback, Streaming, Queue Analysis, Conversations, và Usage Tracking).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "gw-test-secret-key-12345",
+      "type": "string"
+    },
+    {
+      "key": "conversationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "taskId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication & Key Management",
+      "item": [
+        {
+          "name": "POST /auth (Cấp phát API Key mới)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Internal Analytics App\",\n  \"rate_limit_per_min\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth"]
+            },
+            "description": "Đăng ký ứng dụng mới và nhận API Key bảo mật. Key thô chỉ hiển thị 1 lần duy nhất."
+          }
+        },
+        {
+          "name": "Test Auth Failure - Thiếu X-API-Key (Expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Test Auth Failure - X-API-Key không hợp lệ (Expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "invalid-key-99999"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [{\"role\": \"user\", \"content\": \"Hello\"}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. AI Chat & Routing",
+      "item": [
+        {
+          "name": "POST /ai/chat (Hội thoại đa lượt tiêu chuẩn)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Xin chào! Tôi tên là An.\"}\n  ],\n  \"provider\": \"gemini\",\n  \"enable_cache\": true,\n  \"enable_fallback\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            }
+          }
+        },
+        {
+          "name": "POST /ai/chat (Structured Output - JSON Schema)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Liệt kê 2 ngôn ngữ lập trình phổ biến với các trường: name, year.\"}\n  ],\n  \"response_format\": \"json_object\",\n  \"provider\": \"gemini\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "chat"]
+            }
+          }
+        },
+        {
+          "name": "POST /ai/stream (Streaming SSE thời gian thực)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messages\": [\n    {\"role\": \"user\", \"content\": \"Kể một câu chuyện ngắn 3 câu về lập trình viên.\"}\n  ],\n  \"provider\": \"gemini\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "stream"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. AI Content Analysis & Queue Processing",
+      "item": [
+        {
+          "name": "POST /ai/analyze (Phân tích đồng bộ Sync)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Sản phẩm AI Gateway hoạt động rất nhanh và ổn định, nhưng giao diện dashboard cần thêm biểu đồ trực quan hơn.\",\n  \"task_type\": \"sentiment\",\n  \"mode\": \"sync\",\n  \"provider\": \"gemini\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/analyze",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "analyze"]
+            }
+          }
+        },
+        {
+          "name": "POST /ai/analyze (Hàng đợi nền Queue-based Async)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Báo cáo tài chính quý 3 ghi nhận tăng trưởng doanh thu 35%, tuy nhiên chi phí vận hành hạ tầng đám mây tăng 12% do khối lượng truy vấn AI tăng đột biến.\",\n  \"task_type\": \"summary\",\n  \"mode\": \"async\",\n  \"provider\": \"gemini\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ai/analyze",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "analyze"]
+            }
+          }
+        },
+        {
+          "name": "GET /ai/analyze/tasks/:task_id (Kiểm tra trạng thái hàng đợi)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/ai/analyze/tasks/{{taskId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["ai", "analyze", "tasks", "{{taskId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Conversation History Management",
+      "item": [
+        {
+          "name": "GET /conversations (Danh sách cuộc hội thoại)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/conversations?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["conversations"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /conversations/:id (Chi tiết lịch sử tin nhắn)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/conversations/{{conversationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["conversations", "{{conversationId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Observability & System",
+      "item": [
+        {
+          "name": "GET /usage (Thống kê Requests, Tokens, Latency, Error Rate & Cost)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/usage",
+              "host": ["{{baseUrl}}"],
+              "path": ["usage"]
+            }
+          }
+        },
+        {
+          "name": "GET /health (Kiểm tra sức khỏe hệ thống)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
